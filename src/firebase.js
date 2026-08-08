@@ -2,17 +2,16 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
-// Values come from a local .env file (see .env.example) so real keys never get committed
-// to GitHub. Get them from: Firebase console -> Project settings -> General -> "Your apps"
-// -> Web app -> SDK setup and configuration -> Config. If there's no web app in the
-// project yet, add one first: Project settings -> Add app -> Web.
+// Firebase web config. The apiKey here is NOT a secret — it only identifies the
+// project. Access is enforced by Firestore security rules and the Authentication
+// -> Authorized domains list, so it's safe to commit (same approach as Dinner Bell).
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  apiKey: 'AIzaSyBBlFX1zgjtLsSK7wT8hqUIMpGrqbY1quI',
+  authDomain: 'in-stock-bbc23.firebaseapp.com',
+  projectId: 'in-stock-bbc23',
+  storageBucket: 'in-stock-bbc23.firebasestorage.app',
+  messagingSenderId: '331777570419',
+  appId: '1:331777570419:web:a9b46c31760b44dfcf5c06',
 };
 
 const app = initializeApp(firebaseConfig);
