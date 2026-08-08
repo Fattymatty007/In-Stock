@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  // Relative so it works whether this is served from the domain root (once a
+  // custom domain is set) or from a GitHub Pages subpath like /in-stock/.
+  base: './',
   plugins: [
     react(),
     VitePWA({
@@ -12,9 +15,9 @@ export default defineConfig({
         name: 'In Stock',
         short_name: 'In Stock',
         description: 'Inventory, sales, and calendar manager',
-        id: '/',
-        start_url: '/',
-        scope: '/',
+        id: '.',
+        start_url: '.',
+        scope: '.',
         display: 'standalone',
         orientation: 'portrait',
         background_color: '#F6F5EF',

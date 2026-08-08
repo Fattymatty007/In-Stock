@@ -6,58 +6,42 @@ scaffold ready for wrapping into real iOS/Android app-store builds later.
 
 Firebase project `in-stock-bbc23` already exists with Google sign-in and Firestore enabled,
 and its web config is committed in `src/firebase.js` (the `apiKey` there isn't a secret — see
-the comment in that file). What's left is deploying it and, optionally, a custom domain.
+the comment in that file). Firebase is only used client-side here (Auth + Firestore) — hosting
+is plain GitHub Pages, same as Dinner Bell, so no service account or extra secrets are needed.
 
-## 1. Deploy — automatic (recommended)
+## 1. Enable GitHub Pages (one-time, if not already on)
 
-`.github/workflows/deploy.yml` builds and deploys to Firebase Hosting on every push to `main`.
-It needs one secret in this GitHub repo:
+Repo → **Settings** → **Pages** → under **Build and deployment**, set **Source** to
+**GitHub Actions**. (Skip this if it's already set that way, e.g. because you copied the
+setting from Dinner Bell.)
 
-1. Create a service account for Firebase Hosting:
-   [console.cloud.google.com/iam-admin/serviceaccounts/create?project=in-stock-bbc23](https://console.cloud.google.com/iam-admin/serviceaccounts/create?project=in-stock-bbc23)
-   - Name it anything (e.g. `github-deploy`) → **Create and continue**
-   - Under **Grant this service account access to project**, add the role
-     **Firebase Hosting Admin** → **Continue** → **Done**
-2. Open that service account in the list → **Keys** tab → **Add key** → **Create new key** →
-   **JSON** → it downloads a `.json` file.
-3. In GitHub: this repo → **Settings** → **Secrets and variables** → **Actions** →
-   **New repository secret**
-   - Name: `FIREBASE_SERVICE_ACCOUNT`
-   - Value: paste the entire contents of the downloaded JSON file
-4. Merge the `claude/in-stock-mobile-setup` branch into `main` (open a PR, or push directly).
-   That push triggers the workflow — check the **Actions** tab in GitHub to watch it build and
-   deploy. When it finishes, the app is live at `https://in-stock-bbc23.web.app`.
+## 2. Get the code onto `main`
 
-**One extra step for sign-in to work there too:** Firebase console → Authentication →
-Settings → Authorized domains — `in-stock-bbc23.web.app` and `.firebaseapp.com` are usually
-listed by default, but double check.
+Everything is currently on the `claude/in-stock-mobile-setup` branch. Merge it into `main`
+(via a PR, or a direct push) — that push is what triggers `.github/workflows/deploy.yml`,
+which builds and publishes to GitHub Pages automatically. Check the repo's **Actions** tab to
+watch it run. When it finishes, the app is live at `https://fattymatty007.github.io/in-stock/`
+(or a custom domain, see below).
 
-## 2. Deploy — manual (alternative)
+## 3. Authorize the domain in Firebase
 
-If you'd rather deploy from your own computer instead of GitHub Actions:
+Google sign-in only works from domains Firebase knows about. Firebase console →
+**Authentication** → **Settings** → **Authorized domains** → **Add domain** → add whichever
+domain the app actually ends up served from (the `github.io` URL above, and/or your custom
+domain once that's set up). `localhost` is already listed for local development.
 
-```
-npm install
-npm install -g firebase-tools
-firebase login
-npm run build
-firebase deploy
-```
+## 4. Custom domain — whenever you're ready
 
-`firebase login` opens a browser window to sign into the same Google account as the Firebase
-project. This only works from a machine that can open a browser locally — it can't be done
-from this remote session (its network policy blocks Firebase's login service).
+1. Repo → **Settings** → **Pages** → **Custom domain** → enter your domain, e.g.
+   `instock.mattsapps.xyz` (matches the `dinner-bell.mattsapps.xyz` pattern) → **Save**. This
+   writes a `CNAME` file into the repo for you.
+2. In Namecheap (or wherever the domain is registered): **Domain List** → **Manage** →
+   **Advanced DNS** → add a `CNAME` record pointing that subdomain at
+   `fattymatty007.github.io`.
+3. DNS changes can take a few hours to propagate. Once the custom domain shows as verified in
+   GitHub, add it to **Authorized domains** in Firebase too (step 3 above).
 
-## 3. Custom domain (Namecheap) — whenever you're ready
-
-1. Firebase console → **Hosting** → **Add custom domain** → enter your domain, e.g.
-   `instock.mattsapps.xyz` (matches the `dinner-bell.mattsapps.xyz` pattern).
-2. Firebase gives you DNS records to add (a TXT record to verify ownership, then A records).
-3. In Namecheap: **Domain List** → **Manage** → **Advanced DNS** → add those exact records.
-4. DNS changes can take a few hours to propagate. Once they do, add the custom domain to
-   **Authorized domains** in Authentication settings too, same as step 1.
-
-## 4. Installing as a mobile app now (PWA)
+## 5. Installing as a mobile app now (PWA)
 
 No app store needed for this part — once it's deployed:
 
@@ -70,7 +54,16 @@ It launches full-screen, has its own icon, and works offline for anything alread
 (`icon-192.png`, `icon-512.png`, `icon-maskable-512.png`, `apple-touch-icon.png`, `box.svg`)
 with real artwork whenever you have a logo — same filenames, same sizes.
 
-## 5. Getting into the App Store / Play Store later
+## 6. Local development (optional)
+
+```
+npm install
+npm run dev
+```
+
+Opens at `http://localhost:5173`. `localhost` is authorized for Google sign-in by default.
+
+## 7. Getting into the App Store / Play Store later
 
 The repo already has a Capacitor scaffold (`capacitor.config.json`, `android/`, `ios/`) so
 you don't have to restructure anything when you're ready — you just need the platform tools
