@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Plus, X, Trash2, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle2,
-  Package, ShoppingBag, CalendarDays, Receipt, Share2, ClipboardList, Pencil, Save, LogOut,
+  Package, ShoppingBag, CalendarDays, Receipt, Share2, ClipboardList, Pencil, Save, LogOut, Download,
 } from 'lucide-react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './firebase';
@@ -1789,6 +1789,28 @@ function SaveErrorBanner() {
   );
 }
 
+function ManualInstallModal({ isIos, onClose }) {
+  return (
+    <ModalShell onClose={onClose}>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-lg font-semibold text-stone-900">Install In Stock</h3>
+        <button onClick={onClose} aria-label="Close" className="p-1.5 rounded-full hover:bg-stone-100 text-stone-500">
+          <X size={20} />
+        </button>
+      </div>
+      <div className="flex items-start gap-2 text-sm text-stone-500 mb-5">
+        {isIos ? <Share2 size={16} className="text-green-800 flex-shrink-0 mt-0.5" /> : <Download size={16} className="text-green-800 flex-shrink-0 mt-0.5" />}
+        {isIos
+          ? 'Tap the Share icon in Safari, then choose "Add to Home Screen".'
+          : 'Open your browser menu (⋮) and tap "Install app" — or "Add to Home screen" then "Install". Avoid "Create shortcut": that just opens in the browser.'}
+      </div>
+      <button onClick={onClose} className="w-full py-2.5 rounded-lg text-sm font-medium bg-green-800 text-white">
+        Got it
+      </button>
+    </ModalShell>
+  );
+}
+
 function TopBar({ items, events, salesDays, onRestore, onReset, user, onSignIn, onSignOut }) {
   const [backupOpen, setBackupOpen] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
@@ -1883,6 +1905,17 @@ export default function App() {
   // snapshot handler below tell "brand new account" apart from "just hasn't loaded yet".
   const hydratedUid = useRef(null);
 
+  const [installPrompt, setInstallPrompt] = useState(null); // deferred beforeinstallprompt event
+  const [installed, setInstalled] = useState(false);
+  const [showManualInstall, setShowManualInstall] = useState(false);
+  const [{ isStandalone, isIos }] = useState(() => {
+    if (typeof window === 'undefined') return { isStandalone: false, isIos: false };
+    const standalone =
+      window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    const ios = /iphone|ipad|ipod/i.test(window.navigator.userAgent) && !window.MSStream;
+    return { isStandalone: standalone, isIos: ios };
+  });
+
   // Tracks whether anyone is signed in. Firebase persists this across app restarts on its
   // own — there's no equivalent of the old "storage keeps resetting" problem here. Sign-in
   // is optional: the app is fully usable signed out, backed by localStorage on this device.
@@ -1933,6 +1966,63 @@ export default function App() {
     );
     return unsub;
   }, [user]);
+
+  // Pick up Chrome's install prompt — it's captured by an early inline script in index.html
+  // (it can fire before React mounts), and also relayed via a custom event. Hide the button
+  // once the app is installed.
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.__deferredInstallPrompt) {
+      setInstallPrompt(window.__deferredInstallPrompt);
+    }
+    const onAvail = () => setInstallPrompt(window.__deferredInstallPrompt || null);
+    const onInstalled = () => {
+      setInstallPrompt(null);
+      setInstalled(true);
+    };
+    window.addEventListener('pwa-install-available', onAvail);
+    window.addEventListener('pwa-installed', onInstalled);
+    return () => {
+      window.removeEventListener('pwa-install-available', onAvail);
+      window.removeEventListener('pwa-installed', onInstalled);
+    };
+  }, []);
+
+  const handleInstall = async () => {
+    // 1. Newer Web Install API (Chrome 139+): installs the current app directly, without
+    //    needing a captured beforeinstallprompt event.
+    if (typeof navigator !== 'undefined' && typeof navigator.install === 'function') {
+      try {
+        await navigator.install();
+        return;
+      } catch (e) {
+        if (e && e.name === 'AbortError') return; // user dismissed the dialog
+        // any other error → fall through to the older paths
+      }
+    }
+
+    // 2. Classic captured beforeinstallprompt event.
+    const dp = installPrompt || (typeof window !== 'undefined' ? window.__deferredInstallPrompt : null);
+    if (dp) {
+      dp.prompt();
+      try {
+        await dp.userChoice;
+      } catch (e) {
+        /* ignore */
+      }
+      setInstallPrompt(null);
+      if (typeof window !== 'undefined') window.__deferredInstallPrompt = null;
+      return;
+    }
+
+    // 3. Nothing the browser will let us trigger programmatically — show the platform-specific
+    //    manual instructions as a last resort.
+    setShowManualInstall(true);
+  };
+
+  // Offer the install affordance until the app is actually installed / running standalone. The
+  // button always does something helpful (native prompt or a how-to modal), so it never
+  // silently no-ops.
+  const canInstall = !isStandalone && !installed;
 
   async function persistAll(nextItems, nextEvents, nextSalesDays) {
     setItems(nextItems);
@@ -2072,6 +2162,17 @@ export default function App() {
           <TabBar activeTab={activeTab} setActiveTab={setActiveTab} />
           {saveError && <SaveErrorBanner />}
         </div>
+        {canInstall && (
+          <div className="px-4 pt-3">
+            <button
+              onClick={handleInstall}
+              className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-medium bg-green-800 text-white"
+            >
+              <Download size={14} />
+              Install app
+            </button>
+          </div>
+        )}
         {activeTab === 'sales' && (
           <SalesTab
             items={items}
@@ -2086,6 +2187,7 @@ export default function App() {
         )}
         {activeTab === 'calendar' && <CalendarTab events={events} onSave={upsertEvent} onDelete={deleteEvent} />}
       </div>
+      {showManualInstall && <ManualInstallModal isIos={isIos} onClose={() => setShowManualInstall(false)} />}
     </div>
   );
 }
