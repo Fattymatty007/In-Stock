@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './firebase';
-import { subscribeUserData, saveUserData } from './dataStore';
+import { subscribeUserData, saveUserData, loadLocalData, saveLocalData } from './dataStore';
 import { signInWithGoogle, signOutUser } from './auth';
 
 /* ---------- constants ---------- */
@@ -346,32 +346,6 @@ function GoogleIcon() {
       <path fill="#FBBC05" d="M3.97 10.72A5.4 5.4 0 0 1 3.68 9c0-.6.1-1.18.29-1.72V4.95H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.05l3.01-2.33z" />
       <path fill="#EA4335" d="M9 3.58c1.32 0 2.51.46 3.44 1.35l2.59-2.59C13.46.89 11.43 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z" />
     </svg>
-  );
-}
-
-function SignInScreen() {
-  const [signingIn, setSigningIn] = useState(false);
-
-  async function handleSignIn() {
-    setSigningIn(true);
-    await signInWithGoogle();
-    setSigningIn(false); // only matters if sign-in failed/was cancelled; a real success unmounts this screen
-  }
-
-  return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-8 text-center" style={{ backgroundColor: BG_COLOR, fontFamily: BODY_FONT }}>
-      <p className="text-xs font-semibold tracking-widest text-stone-400 uppercase mb-3">In Stock</p>
-      <h1 className="text-2xl font-semibold text-stone-900 mb-2">Sales, inventory, and your calendar in one place</h1>
-      <p className="text-sm text-stone-500 mb-8">Sign in to sync your data across every device.</p>
-      <button
-        onClick={handleSignIn}
-        disabled={signingIn}
-        className="flex items-center gap-3 bg-white border border-stone-200 rounded-xl px-5 py-3 font-medium text-stone-900 hover:border-stone-300 disabled:opacity-60"
-      >
-        <GoogleIcon />
-        {signingIn ? 'Signing in\u2026' : 'Sign in with Google'}
-      </button>
-    </div>
   );
 }
 
@@ -1815,20 +1789,51 @@ function SaveErrorBanner() {
   );
 }
 
-function TopBar({ items, events, salesDays, onRestore, onReset, user, onSignOut }) {
+function TopBar({ items, events, salesDays, onRestore, onReset, user, onSignIn, onSignOut }) {
   const [backupOpen, setBackupOpen] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
   const todayLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+
+  async function handleSignIn() {
+    setSigningIn(true);
+    await onSignIn();
+    setSigningIn(false); // only matters if sign-in failed/was cancelled; success unmounts this button
+  }
+
   return (
-    <div className="px-4 pt-5 pb-1 flex items-center justify-between">
-      <p className="text-xs font-semibold tracking-widest text-stone-400 uppercase">In Stock</p>
-      <div className="flex items-center gap-3">
-        <p className="text-xs text-stone-400">{todayLabel}</p>
-        <button onClick={() => setBackupOpen(true)} aria-label="Backup and restore your data" className="text-stone-400 hover:text-stone-600">
-          <Save size={15} />
-        </button>
-        <button onClick={onSignOut} aria-label={'Sign out of ' + (user && user.email ? user.email : 'your account')} className="text-stone-400 hover:text-stone-600">
-          <LogOut size={15} />
-        </button>
+    <div className="px-4 pt-5 pb-1">
+      <div className="flex items-center justify-between mb-1.5">
+        <a href="https://mattsapps.xyz" className="text-xs" style={{ ...monoStyle, color: '#a8a29e', letterSpacing: '0.05em', textDecoration: 'none' }}>
+          ← mattsapps
+        </a>
+        {user ? (
+          <div className="flex items-center gap-2">
+            {user.photoURL && (
+              <img src={user.photoURL} alt="" referrerPolicy="no-referrer" className="w-5 h-5 rounded-full border border-stone-200" />
+            )}
+            <button onClick={onSignOut} aria-label={'Sign out of ' + (user.email || 'your account')} className="text-stone-400 hover:text-stone-600">
+              <LogOut size={14} />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={handleSignIn}
+            disabled={signingIn}
+            className="flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium text-stone-600 border border-stone-200 hover:border-stone-300 disabled:opacity-60"
+          >
+            <GoogleIcon />
+            {signingIn ? 'Signing in…' : 'Sign in'}
+          </button>
+        )}
+      </div>
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold tracking-widest text-stone-400 uppercase">In Stock</p>
+        <div className="flex items-center gap-3">
+          <p className="text-xs text-stone-400">{todayLabel}</p>
+          <button onClick={() => setBackupOpen(true)} aria-label="Backup and restore your data" className="text-stone-400 hover:text-stone-600">
+            <Save size={15} />
+          </button>
+        </div>
       </div>
       {backupOpen && (
         <BackupModal items={items} events={events} salesDays={salesDays} onClose={() => setBackupOpen(false)} onRestore={onRestore} onReset={onReset} />
@@ -1869,14 +1874,18 @@ export default function App() {
   const [authChecked, setAuthChecked] = useState(false);
   const [user, setUser] = useState(null);
   const [activeTab, setActiveTab] = useState('sales');
-  const [items, setItems] = useState([]);
-  const [events, setEvents] = useState([]);
-  const [salesDays, setSalesDays] = useState([]);
-  const [dataReady, setDataReady] = useState(false);
+  const [items, setItems] = useState(() => migrateItems(loadLocalData().items));
+  const [events, setEvents] = useState(() => loadLocalData().events);
+  const [salesDays, setSalesDays] = useState(() => loadLocalData().salesDays);
+  const [dataReady, setDataReady] = useState(true); // false only while waiting on a signed-in user's first Firestore snapshot
   const [saveError, setSaveError] = useState(false);
+  // Which uid (if any) the current items/events/salesDays came from Firestore for — lets the
+  // snapshot handler below tell "brand new account" apart from "just hasn't loaded yet".
+  const hydratedUid = useRef(null);
 
   // Tracks whether anyone is signed in. Firebase persists this across app restarts on its
-  // own — there's no equivalent of the old "storage keeps resetting" problem here.
+  // own — there's no equivalent of the old "storage keeps resetting" problem here. Sign-in
+  // is optional: the app is fully usable signed out, backed by localStorage on this device.
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
@@ -1887,22 +1896,37 @@ export default function App() {
 
   // Once signed in, stay subscribed to this user's document in real time — it updates
   // automatically after this app's own saves, and would also pick up changes made from
-  // another device signed into the same account.
+  // another device signed into the same account. Signed out (including right after sign-out),
+  // fall back to this device's local copy instead of Firestore.
   useEffect(() => {
     if (!user) {
-      setItems([]);
-      setEvents([]);
-      setSalesDays([]);
-      setDataReady(false);
+      hydratedUid.current = null;
+      const local = loadLocalData();
+      setItems(migrateItems(local.items));
+      setEvents(local.events);
+      setSalesDays(local.salesDays);
+      setDataReady(true);
       return;
     }
     setDataReady(false);
     const unsub = subscribeUserData(
       user.uid,
       (data) => {
-        setItems(data ? migrateItems(data.items) : []);
-        setEvents(data && Array.isArray(data.events) ? data.events : []);
-        setSalesDays(data && Array.isArray(data.salesDays) ? data.salesDays : []);
+        if (data) {
+          setItems(migrateItems(data.items));
+          setEvents(Array.isArray(data.events) ? data.events : []);
+          setSalesDays(Array.isArray(data.salesDays) ? data.salesDays : []);
+        } else if (hydratedUid.current !== user.uid) {
+          // First time this account has ever signed in (no Firestore doc yet) — carry over
+          // whatever was already entered anonymously on this device instead of starting empty.
+          const local = loadLocalData();
+          const migratedItems = migrateItems(local.items);
+          setItems(migratedItems);
+          setEvents(local.events);
+          setSalesDays(local.salesDays);
+          saveUserData(user.uid, { items: migratedItems, events: local.events, salesDays: local.salesDays });
+        }
+        hydratedUid.current = user.uid;
         setDataReady(true);
       },
       () => setDataReady(true) // still stop showing a spinner if the subscription itself errors
@@ -1914,9 +1938,12 @@ export default function App() {
     setItems(nextItems);
     setEvents(nextEvents);
     setSalesDays(nextSalesDays);
-    if (!user) return;
-    const ok = await saveUserData(user.uid, { items: nextItems, events: nextEvents, salesDays: nextSalesDays });
-    setSaveError(!ok);
+    if (user) {
+      const ok = await saveUserData(user.uid, { items: nextItems, events: nextEvents, salesDays: nextSalesDays });
+      setSaveError(!ok);
+    } else {
+      saveLocalData({ items: nextItems, events: nextEvents, salesDays: nextSalesDays });
+    }
   }
 
   async function persistItems(next) {
@@ -2023,9 +2050,7 @@ export default function App() {
     persistAll([], [], []);
   }
 
-  if (!authChecked) return <LoadingScreen />;
-  if (!user) return <SignInScreen />;
-  if (!dataReady) return <LoadingScreen />;
+  if (!authChecked || !dataReady) return <LoadingScreen />;
 
   return (
     <div
@@ -2034,7 +2059,16 @@ export default function App() {
     >
       <div className="max-w-md mx-auto">
         <div className="sticky top-0 z-40" style={{ backgroundColor: BG_COLOR, paddingTop: 'env(safe-area-inset-top, 0px)' }}>
-          <TopBar items={items} events={events} salesDays={salesDays} onRestore={restoreBackup} onReset={resetAll} user={user} onSignOut={signOutUser} />
+          <TopBar
+            items={items}
+            events={events}
+            salesDays={salesDays}
+            onRestore={restoreBackup}
+            onReset={resetAll}
+            user={user}
+            onSignIn={signInWithGoogle}
+            onSignOut={signOutUser}
+          />
           <TabBar activeTab={activeTab} setActiveTab={setActiveTab} />
           {saveError && <SaveErrorBanner />}
         </div>

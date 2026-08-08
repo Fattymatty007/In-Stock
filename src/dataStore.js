@@ -33,3 +33,31 @@ export async function saveUserData(uid, data) {
     return false;
   }
 }
+
+// Used before sign-in (and after sign-out) so the app is fully usable without
+// an account — data just stays on this device until/unless the user signs in,
+// at which point it's carried over to Firestore (see App.jsx).
+const LOCAL_KEY = 'in-stock-data';
+
+export function loadLocalData() {
+  try {
+    const raw = localStorage.getItem(LOCAL_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return {
+      items: parsed && Array.isArray(parsed.items) ? parsed.items : [],
+      events: parsed && Array.isArray(parsed.events) ? parsed.events : [],
+      salesDays: parsed && Array.isArray(parsed.salesDays) ? parsed.salesDays : [],
+    };
+  } catch (e) {
+    console.error('Failed to read local data', e);
+    return { items: [], events: [], salesDays: [] };
+  }
+}
+
+export function saveLocalData(data) {
+  try {
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.error('Failed to save local data', e);
+  }
+}
