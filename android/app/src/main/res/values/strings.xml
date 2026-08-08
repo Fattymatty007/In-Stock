@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">In Stock</string>
+    <string name="title_activity_main">In Stock</string>
+    <string name="package_name">com.mattsapps.instock</string>
+    <string name="custom_url_scheme">com.mattsapps.instock</string>
+</resources>
