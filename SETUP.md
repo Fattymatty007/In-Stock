@@ -30,16 +30,21 @@ Google sign-in only works from domains Firebase knows about. Firebase console �
 domain the app actually ends up served from (the `github.io` URL above, and/or your custom
 domain once that's set up). `localhost` is already listed for local development.
 
-## 4. Custom domain — whenever you're ready
+## 4. Custom domain: in-stock.mattsapps.xyz
 
-1. Repo → **Settings** → **Pages** → **Custom domain** → enter your domain, e.g.
-   `instock.mattsapps.xyz` (matches the `dinner-bell.mattsapps.xyz` pattern) → **Save**. This
-   writes a `CNAME` file into the repo for you.
-2. In Namecheap (or wherever the domain is registered): **Domain List** → **Manage** →
-   **Advanced DNS** → add a `CNAME` record pointing that subdomain at
-   `fattymatty007.github.io`.
-3. DNS changes can take a few hours to propagate. Once the custom domain shows as verified in
-   GitHub, add it to **Authorized domains** in Firebase too (step 3 above).
+`public/CNAME` already points GitHub Pages at `in-stock.mattsapps.xyz`. Two things left,
+both outside this repo:
+
+1. In Namecheap (or wherever `mattsapps.xyz` is registered): **Domain List** → **Manage** →
+   **Advanced DNS** → add a `CNAME` record — host `in-stock`, value `fattymatty007.github.io.`
+   (matches how `dinner-bell` is set up there).
+2. Repo → **Settings** → **Pages** should show `in-stock.mattsapps.xyz` as the custom domain
+   already (picked up from the `CNAME` file) — once DNS propagates, tick **Enforce HTTPS**
+   there if it isn't already checked.
+
+DNS changes can take a few hours to propagate. Once `in-stock.mattsapps.xyz` loads the app,
+add it to **Authorized domains** in Firebase too (step 3 above) — sign-in won't work on the
+new domain until you do.
 
 ## 5. Installing as a mobile app now (PWA)
 
