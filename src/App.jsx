@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Plus, X, Trash2, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle2,
+  Plus, X, Trash2, ChevronLeft, ChevronRight, ChevronDown, AlertTriangle, CheckCircle2,
   Package, ShoppingBag, CalendarDays, Receipt, Share2, ClipboardList, Pencil, Save, LogOut, Download,
 } from 'lucide-react';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -177,6 +177,82 @@ function ModalShell({ onClose, children }) {
         {children}
       </div>
     </div>
+  );
+}
+
+// Tracks whether a text-entry element is currently focused anywhere in the app (including
+// inside modals — this listens at the document level, so no prop drilling needed) and exposes
+// a way to blur it, which dismisses the on-screen keyboard on mobile.
+function useActiveTextInput() {
+  const [visible, setVisible] = useState(false);
+  const activeRef = useRef(null);
+
+  useEffect(() => {
+    function isTextInput(el) {
+      if (!el) return false;
+      if (el.tagName === 'TEXTAREA') return true;
+      if (el.tagName === 'INPUT') {
+        const type = (el.type || 'text').toLowerCase();
+        return ['text', 'number', 'email', 'tel', 'url', 'search', 'password', 'date'].includes(type);
+      }
+      return false;
+    }
+    let hideTimer = null;
+    function onFocusIn(e) {
+      if (!isTextInput(e.target)) return;
+      clearTimeout(hideTimer);
+      activeRef.current = e.target;
+      setVisible(true);
+    }
+    function onFocusOut(e) {
+      if (!isTextInput(e.target)) return;
+      // Small delay so tabbing straight from one text input to another doesn't flicker the button.
+      hideTimer = setTimeout(() => setVisible(false), 80);
+    }
+    document.addEventListener('focusin', onFocusIn);
+    document.addEventListener('focusout', onFocusOut);
+    return () => {
+      document.removeEventListener('focusin', onFocusIn);
+      document.removeEventListener('focusout', onFocusOut);
+      clearTimeout(hideTimer);
+    };
+  }, []);
+
+  return { visible, dismiss: () => activeRef.current?.blur() };
+}
+
+// Floating button that sits just above the on-screen keyboard (tracked via the Visual Viewport
+// API, since the keyboard shrinks that but not the layout viewport) and hides it on tap.
+function KeyboardDismissButton({ visible, onDismiss }) {
+  const [bottomOffset, setBottomOffset] = useState(8);
+
+  useEffect(() => {
+    if (!visible) return undefined;
+    const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+    function update() {
+      if (!vv) return;
+      setBottomOffset(Math.max(window.innerHeight - (vv.height + vv.offsetTop), 0) + 8);
+    }
+    update();
+    vv?.addEventListener('resize', update);
+    vv?.addEventListener('scroll', update);
+    return () => {
+      vv?.removeEventListener('resize', update);
+      vv?.removeEventListener('scroll', update);
+    };
+  }, [visible]);
+
+  if (!visible) return null;
+
+  return (
+    <button
+      onClick={onDismiss}
+      aria-label="Hide keyboard"
+      className="fixed right-3 z-50 flex items-center justify-center w-9 h-9 rounded-full shadow-lg bg-stone-900 text-white"
+      style={{ bottom: bottomOffset }}
+    >
+      <ChevronDown size={18} />
+    </button>
   );
 }
 
@@ -1916,6 +1992,8 @@ export default function App() {
     return { isStandalone: standalone, isIos: ios };
   });
 
+  const { visible: keyboardVisible, dismiss: dismissKeyboard } = useActiveTextInput();
+
   // Tracks whether anyone is signed in. Firebase persists this across app restarts on its
   // own — there's no equivalent of the old "storage keeps resetting" problem here. Sign-in
   // is optional: the app is fully usable signed out, backed by localStorage on this device.
@@ -2188,6 +2266,7 @@ export default function App() {
         {activeTab === 'calendar' && <CalendarTab events={events} onSave={upsertEvent} onDelete={deleteEvent} />}
       </div>
       {showManualInstall && <ManualInstallModal isIos={isIos} onClose={() => setShowManualInstall(false)} />}
+      <KeyboardDismissButton visible={keyboardVisible} onDismiss={dismissKeyboard} />
     </div>
   );
 }
