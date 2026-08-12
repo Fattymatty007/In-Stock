@@ -24,6 +24,7 @@
       (function () {
         window.__deferredInstallPrompt = null;
         window.addEventListener('beforeinstallprompt', function (e) {
+          console.log('beforeinstallprompt fired', e);
           e.preventDefault();
           window.__deferredInstallPrompt = e;
           window.dispatchEvent(new CustomEvent('pwa-install-available'));
