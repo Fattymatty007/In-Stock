@@ -111,7 +111,7 @@ function buildPurchaseListText(lowStockItems) {
   return 'Purchase List (' + dateLabel + ')\n\n' + lines.join('\n');
 }
 
-function buildSalesDaySummaryText(day, rows, totalCost, totalRevenue, profit) {
+function buildSalesDaySummaryText(day, rows, totalCost, totalRevenue, profit, extraCosts) {
   const lines = rows.map(({ entry, item }) => {
     return (
       '- ' + item.name + ': started ' + formatExactQty(entry.qtyOut, item) +
@@ -119,9 +119,11 @@ function buildSalesDaySummaryText(day, rows, totalCost, totalRevenue, profit) {
       ', sold ' + formatExactQty(entry.sold || 0, item)
     );
   });
+  const extraLines = (extraCosts || []).map((c) => '- ' + c.label + ': ' + currency(c.amount));
   return (
     'Sales Day \u2014 ' + formatDateLabel(day.date) + '\n\n' +
     lines.join('\n') + '\n\n' +
+    (extraLines.length > 0 ? 'Additional costs:\n' + extraLines.join('\n') + '\n\n' : '') +
     'Cost: ' + currency(totalCost) + '\n' +
     'Revenue: ' + currency(totalRevenue) + '\n' +
     'Profit: ' + currency(profit)
@@ -982,9 +984,76 @@ function SalesDayFormModal({ day, items, onClose, onSave }) {
   );
 }
 
-function SalesDayDetailModal({ day, items, onClose, onComplete }) {
+// Day-level expenses beyond per-item cost — space rental, gas, etc. Edits persist immediately
+// (via onChange) rather than waiting on a separate save step, since this list is independent of
+// completing the day.
+function ExtraCostsSection({ extraCosts, onChange }) {
+  const [label, setLabel] = useState('');
+  const [amount, setAmount] = useState('');
+  const [error, setError] = useState('');
+
+  function handleAdd() {
+    const trimmed = label.trim();
+    const parsed = Number(amount);
+    if (!trimmed) {
+      setError('Enter what the cost was for.');
+      return;
+    }
+    if (!amount || !(parsed > 0)) {
+      setError('Enter an amount greater than 0.');
+      return;
+    }
+    onChange([...extraCosts, { id: generateId(), label: trimmed, amount: parsed }]);
+    setLabel('');
+    setAmount('');
+    setError('');
+  }
+
+  return (
+    <div className="mb-5">
+      <p className="text-xs uppercase tracking-wide text-stone-400 font-medium mb-2">Additional costs</p>
+      {extraCosts.length > 0 && (
+        <div className="space-y-2 mb-3">
+          {extraCosts.map((c) => (
+            <div key={c.id} className="flex items-center justify-between bg-stone-50 rounded-xl px-3.5 py-2.5">
+              <p className="text-sm font-medium text-stone-900 truncate mr-2">{c.label}</p>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-sm text-stone-600" style={monoStyle}>{currency(c.amount)}</span>
+                <button
+                  onClick={() => onChange(extraCosts.filter((x) => x.id !== c.id))}
+                  aria-label={'Remove ' + c.label}
+                  className="p-1 rounded-full hover:bg-stone-200 text-stone-400"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <input
+          type="text" value={label} onChange={(e) => setLabel(e.target.value)}
+          placeholder="e.g. Space rental" className={inputCls + ' flex-1'}
+        />
+        <input
+          type="number" inputMode="decimal" min="0" step="0.01"
+          value={amount} onChange={(e) => setAmount(e.target.value)}
+          placeholder="0.00" className={inputCls} style={{ ...monoStyle, width: 90 }}
+        />
+        <button onClick={handleAdd} aria-label="Add cost" className="px-3 rounded-xl bg-stone-900 text-white shrink-0">
+          <Plus size={16} />
+        </button>
+      </div>
+      {error && <p className="text-xs text-rose-600 mt-1.5">{error}</p>}
+    </div>
+  );
+}
+
+function SalesDayDetailModal({ day, items, onClose, onComplete, onUpdateExtraCosts }) {
   const [remaining, setRemaining] = useState({});
   const [copyState, setCopyState] = useState('idle');
+  const [extraCosts, setExtraCosts] = useState(() => day.extraCosts || []);
   const rows = day.items.map((entry) => ({ entry, item: items.find((i) => i.id === entry.itemId) })).filter((x) => x.item);
   const isActive = day.status === 'active';
 
@@ -999,6 +1068,11 @@ function SalesDayDetailModal({ day, items, onClose, onComplete }) {
     onClose();
   }
 
+  function handleExtraCostsChange(next) {
+    setExtraCosts(next);
+    onUpdateExtraCosts(day.id, next);
+  }
+
   async function handleCopy(text) {
     try {
       await navigator.clipboard.writeText(text);
@@ -1010,7 +1084,7 @@ function SalesDayDetailModal({ day, items, onClose, onComplete }) {
   }
 
   async function handleShare() {
-    const text = buildSalesDaySummaryText(day, rows, totalCost, totalRevenue, profit);
+    const text = buildSalesDaySummaryText(day, rows, totalCost, totalRevenue, profit, extraCosts);
     if (typeof navigator !== 'undefined' && navigator.share) {
       try {
         await navigator.share({ title: 'Sales day \u2014 ' + formatDateLabel(day.date), text });
@@ -1033,7 +1107,8 @@ function SalesDayDetailModal({ day, items, onClose, onComplete }) {
   const totalSold = rows.reduce((sum, { entry, item }) => sum + soldFor(entry, item), 0);
   const totalCost = rows.reduce((sum, { entry, item }) => sum + (item.cost || 0) * soldFor(entry, item), 0);
   const totalRevenue = rows.reduce((sum, { entry, item }) => sum + (item.salePrice || 0) * soldFor(entry, item), 0);
-  const profit = totalRevenue - totalCost;
+  const totalExtraCosts = extraCosts.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
+  const profit = totalRevenue - totalCost - totalExtraCosts;
 
   return (
     <ModalShell onClose={onClose}>
@@ -1077,14 +1152,6 @@ function SalesDayDetailModal({ day, items, onClose, onComplete }) {
               );
             })}
           </div>
-          <p className="text-sm text-stone-500 mb-3">
-            Total sold so far: <span className="font-semibold text-stone-900" style={monoStyle}>{totalSold}</span> units
-          </p>
-          <div className="grid grid-cols-3 gap-2">
-            <Stat label="Cost" value={currency(totalCost)} />
-            <Stat label="Revenue" value={currency(totalRevenue)} />
-            <Stat label="Profit" value={currency(profit)} tone={profit < 0 ? 'negative' : 'positive'} />
-          </div>
         </>
       ) : (
         <div className="space-y-3 mb-5">
@@ -1098,15 +1165,22 @@ function SalesDayDetailModal({ day, items, onClose, onComplete }) {
               </div>
             </div>
           ))}
-          <p className="text-sm text-stone-500 pt-1 mb-3">
-            Total sold: <span className="font-semibold text-stone-900" style={monoStyle}>{totalSold}</span> units
+        </div>
+      )}
+
+      {rows.length > 0 && (
+        <>
+          <p className="text-sm text-stone-500 mb-3">
+            Total sold{isActive ? ' so far' : ''}: <span className="font-semibold text-stone-900" style={monoStyle}>{totalSold}</span> units
           </p>
-          <div className="grid grid-cols-3 gap-2">
+          <ExtraCostsSection extraCosts={extraCosts} onChange={handleExtraCostsChange} />
+          <div className={'grid gap-2 mb-5 ' + (totalExtraCosts > 0 ? 'grid-cols-4' : 'grid-cols-3')}>
             <Stat label="Cost" value={currency(totalCost)} />
+            {totalExtraCosts > 0 && <Stat label="Extra" value={currency(totalExtraCosts)} />}
             <Stat label="Revenue" value={currency(totalRevenue)} />
             <Stat label="Profit" value={currency(profit)} tone={profit < 0 ? 'negative' : 'positive'} />
           </div>
-        </div>
+        </>
       )}
 
       <div className="flex gap-2">
@@ -1337,7 +1411,7 @@ function EventModal({ event, defaultDate, onClose, onSave, onDelete }) {
 
 /* ---------- tabs ---------- */
 
-function SalesTab({ items, salesDays, onSaveDay, onCompleteDay, onDeleteDay }) {
+function SalesTab({ items, salesDays, onSaveDay, onCompleteDay, onDeleteDay, onUpdateExtraCosts }) {
   const [formDay, setFormDay] = useState(undefined); // undefined = closed, null = new, object = editing
   const [detailDay, setDetailDay] = useState(null); // tap: view / complete
   const [actionDay, setActionDay] = useState(null); // long-press: edit / delete
@@ -1406,7 +1480,13 @@ function SalesTab({ items, salesDays, onSaveDay, onCompleteDay, onDeleteDay }) {
         <SalesDayFormModal day={formDay} items={items} onClose={() => setFormDay(undefined)} onSave={onSaveDay} />
       )}
       {detailDay && (
-        <SalesDayDetailModal day={detailDay} items={items} onClose={() => setDetailDay(null)} onComplete={onCompleteDay} />
+        <SalesDayDetailModal
+          day={detailDay}
+          items={items}
+          onClose={() => setDetailDay(null)}
+          onComplete={onCompleteDay}
+          onUpdateExtraCosts={onUpdateExtraCosts}
+        />
       )}
       {actionDay && (
         <SalesDayActionSheet
@@ -2210,6 +2290,10 @@ export default function App() {
     persistAll(nextItems, events, nextSalesDays);
   }
 
+  function updateSalesDayExtraCosts(dayId, extraCosts) {
+    persistSalesDays(salesDays.map((d) => (d.id === dayId ? { ...d, extraCosts } : d)));
+  }
+
   function restoreBackup(data) {
     persistAll(migrateItems(data.items), data.events, data.salesDays);
   }
@@ -2258,6 +2342,7 @@ export default function App() {
             onSaveDay={saveSalesDay}
             onCompleteDay={completeSalesDay}
             onDeleteDay={deleteSalesDay}
+            onUpdateExtraCosts={updateSalesDayExtraCosts}
           />
         )}
         {activeTab === 'inventory' && (
